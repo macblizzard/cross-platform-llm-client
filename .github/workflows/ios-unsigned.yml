@@ -8,6 +8,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-latest
+    timeout-minutes: 300
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +24,26 @@ jobs:
           V=$(grep -E '^version:' pubspec.yaml | awk '{print $2}')
           echo "name=${V%%+*}" >> $GITHUB_OUTPUT
           echo "build=${V##*+}" >> $GITHUB_OUTPUT
+      - name: Native build tools
+        run: brew install cmake ninja bazelisk || true
+      - name: Cache LiteRT-LM xcframeworks
+        id: litert
+        uses: actions/cache@v4
+        with:
+          path: local_plugins/flutter_litert_lm/ios/Frameworks/*.xcframework
+          key: litert-${{ runner.os }}-${{ hashFiles('local_plugins/flutter_litert_lm/scripts/build_ios_frameworks.sh') }}
+      - name: Build LiteRT-LM xcframeworks
+        if: steps.litert.outputs.cache-hit != 'true'
+        run: bash local_plugins/flutter_litert_lm/scripts/build_ios_frameworks.sh
+      - name: Cache llama.cpp iOS lib
+        id: llama
+        uses: actions/cache@v4
+        with:
+          path: local_plugins/llama_flutter_android/ios/llama_ios
+          key: llama-ios-${{ hashFiles('local_plugins/llama_flutter_android/scripts/build_llama_ios.sh') }}-${{ hashFiles('local_plugins/llama_flutter_android/android/src/main/cpp/llama.cpp/CMakeLists.txt') }}
+      - name: Build llama.cpp for iOS
+        if: steps.llama.outputs.cache-hit != 'true'
+        run: bash local_plugins/llama_flutter_android/scripts/build_llama_ios.sh
       - run: flutter pub get
       - name: Pod install
         run: cd ios && pod install --repo-update

@@ -68,3 +68,23 @@ jobs:
           body: Unsigned iOS build of ${{ github.repository }}@${{ github.sha }} for sideloading.
           files: PrivateLM.ipa
           make_latest: true
+      - name: Update apps.json in source repo
+        env:
+          GH_TOKEN: ${{ secrets.IPA_REPO_TOKEN }}
+          VNAME: ${{ steps.ver.outputs.name }}
+          VBUILD: ${{ steps.ver.outputs.build }}
+        run: |
+          SIZE=$(stat -f%z PrivateLM.ipa)
+          git clone https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository_owner }}/privatelm-ipa-source src
+          cd src
+          python3 - "$SIZE" <<'PY'
+          import json,sys,os,datetime
+          d=json.load(open('apps.json'));a=d['apps'][0]
+          n,b=os.environ['VNAME'],os.environ['VBUILD']
+          url=f"https://github.com/{os.environ['GITHUB_REPOSITORY_OWNER']}/privatelm-ipa-source/releases/download/v{n}-{b}/PrivateLM.ipa"
+          v={"version":n,"buildVersion":b,"date":datetime.date.today().isoformat(),"downloadURL":url,"size":int(sys.argv[1]),"minOSVersion":"16.2"}
+          a['versions']=[v]+[x for x in a['versions'] if x.get('downloadURL')!=url]
+          a.update(version=n,versionDate=v['date'],downloadURL=url,size=v['size'])
+          json.dump(d,open('apps.json','w'),indent=2)
+          PY
+          git -c user.name=github-actions -c user.email=actions@github.com commit -am "apps.json: v${VNAME}-${VBUILD}" && git push || echo "no change"

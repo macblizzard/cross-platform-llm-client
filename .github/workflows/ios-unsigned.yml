@@ -1,0 +1,48 @@
+name: iOS unsigned IPA
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: true
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Read version
+        id: ver
+        run: |
+          V=$(grep -E '^version:' pubspec.yaml | awk '{print $2}')
+          echo "name=${V%%+*}" >> $GITHUB_OUTPUT
+          echo "build=${V##*+}" >> $GITHUB_OUTPUT
+      - run: flutter pub get
+      - name: Pod install
+        run: cd ios && pod install --repo-update
+      - run: flutter build ios --release --no-codesign
+      - name: Package IPA
+        run: |
+          mkdir -p Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -qry PrivateLM.ipa Payload
+          ls -l PrivateLM.ipa
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PrivateLM-${{ steps.ver.outputs.name }}-ipa
+          path: PrivateLM.ipa
+      - name: Publish to IPA source repo
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: ${{ github.repository_owner }}/privatelm-ipa-source
+          token: ${{ secrets.IPA_REPO_TOKEN }}
+          tag_name: v${{ steps.ver.outputs.name }}-${{ steps.ver.outputs.build }}
+          name: PrivateLM ${{ steps.ver.outputs.name }} (${{ steps.ver.outputs.build }})
+          body: Unsigned iOS build of ${{ github.repository }}@${{ github.sha }} for sideloading.
+          files: PrivateLM.ipa
+          make_latest: true
